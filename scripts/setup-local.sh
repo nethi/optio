@@ -1,5 +1,13 @@
 #!/bin/bash
+set -x
 set -euo pipefail
+
+BUILD_IMAGES=true
+for arg in "$@"; do
+  case $arg in
+    --no-build) BUILD_IMAGES=false ;;
+  esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -22,7 +30,7 @@ if ! kubectl cluster-info >/dev/null 2>&1; then
 fi
 
 # Check Kubernetes version (v1.33+ required for post-quantum TLS)
-K8S_SERVER_VERSION=$(kubectl version --output=json 2>/dev/null | grep -o '"gitVersion":"v[0-9]*\.[0-9]*' | tail -1 | grep -o '[0-9]*\.[0-9]*')
+K8S_SERVER_VERSION=$(kubectl version --output=json 2>/dev/null | grep -o '"gitVersion":[[:space:]]*"v[0-9]*\.[0-9]*' | tail -1 | grep -o '[0-9]*\.[0-9]*')
 if [ -n "$K8S_SERVER_VERSION" ]; then
   K8S_MAJOR=$(echo "$K8S_SERVER_VERSION" | cut -d. -f1)
   K8S_MINOR=$(echo "$K8S_SERVER_VERSION" | cut -d. -f2)
@@ -39,28 +47,36 @@ echo "[1/6] Installing dependencies..."
 pnpm install
 
 echo "[2/6] Building agent images..."
-echo "   Building optio-base (required)..."
-docker build -t optio-base:latest -f images/base.Dockerfile . -q
-docker tag optio-base:latest optio-agent:latest
-echo "   Building optio-node..."
-docker build -t optio-node:latest -f images/node.Dockerfile . -q &
-echo "   Building optio-python..."
-docker build -t optio-python:latest -f images/python.Dockerfile . -q &
-echo "   Building optio-go..."
-docker build -t optio-go:latest -f images/go.Dockerfile . -q &
-echo "   Building optio-rust..."
-docker build -t optio-rust:latest -f images/rust.Dockerfile . -q &
-echo "   Building optio-optio (operations assistant)..."
-docker build -t optio-optio:latest -f Dockerfile.optio . -q &
-wait
-echo "   Building optio-full..."
-docker build -t optio-full:latest -f images/full.Dockerfile . -q
-echo "   All agent images built."
+if [ "$BUILD_IMAGES" = true ]; then
+  echo "   Building optio-base (required)..."
+  docker build -t optio-base:latest -f images/base.Dockerfile . -q
+  docker tag optio-base:latest optio-agent:latest
+  echo "   Building optio-node..."
+  docker build -t optio-node:latest -f images/node.Dockerfile . -q &
+  echo "   Building optio-python..."
+  docker build -t optio-python:latest -f images/python.Dockerfile . -q &
+  echo "   Building optio-go..."
+  docker build -t optio-go:latest -f images/go.Dockerfile . -q &
+  echo "   Building optio-rust..."
+  docker build -t optio-rust:latest -f images/rust.Dockerfile . -q &
+  echo "   Building optio-optio (operations assistant)..."
+  docker build -t optio-optio:latest -f Dockerfile.optio . -q &
+  wait
+  echo "   Building optio-full..."
+  docker build -t optio-full:latest -f images/full.Dockerfile . -q
+  echo "   All agent images built."
+else
+  echo "   Skipped (--no-build)"
+fi
 
 echo "[3/6] Building API and Web images..."
-docker build -t optio-api:latest -f Dockerfile.api . -q
-docker build -t optio-web:latest -f Dockerfile.web . -q
-echo "   API and Web images built."
+if [ "$BUILD_IMAGES" = true ]; then
+  docker build -t optio-api:latest -f Dockerfile.api . -q
+  docker build -t optio-web:latest -f Dockerfile.web . -q
+  echo "   API and Web images built."
+else
+  echo "   Skipped (--no-build)"
+fi
 
 echo "[4/6] Installing metrics-server..."
 if kubectl get deployment metrics-server -n kube-system &>/dev/null; then
