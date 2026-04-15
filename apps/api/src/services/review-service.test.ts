@@ -157,8 +157,9 @@ describe("launchReview", () => {
 
     mockGetTask.mockResolvedValueOnce(parentTask);
 
-    // No repo config (first call is getDefaultWorkspaceId, second is the repo lookup)
+    // No repo config — three queries: workspace-specific, null-workspace, any-workspace fallback
     vi.mocked(db.select().from(undefined as any).where as any)
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
 
@@ -190,6 +191,7 @@ describe("launchReview", () => {
 
     mockGetTask.mockResolvedValueOnce(parentTask);
     vi.mocked(db.select().from(undefined as any).where as any)
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
 
