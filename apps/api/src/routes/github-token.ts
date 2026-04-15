@@ -92,11 +92,11 @@ export async function githubTokenRoutes(rawApp: FastifyInstance) {
         });
 
         if (res.ok) {
-          const user = (await res.json()) as { login: string; name: string };
+          const user = (await res.json()) as { login: string; name: string | null };
           return reply.send({
             status: "valid",
             source: "pat",
-            user: { login: user.login, name: user.name },
+            user: { login: user.login, name: user.name ?? user.login },
           });
         }
 
@@ -154,13 +154,13 @@ export async function githubTokenRoutes(rawApp: FastifyInstance) {
           });
         }
 
-        const user = (await res.json()) as { login: string; name: string };
+        const user = (await res.json()) as { login: string; name: string | null };
 
         await storeSecret("GITHUB_TOKEN", token.trim(), "global");
 
         return reply.send({
           success: true,
-          user: { login: user.login, name: user.name },
+          user: { login: user.login, name: user.name ?? user.login },
           message: "GitHub token replaced successfully. PR watching and issue sync will resume.",
         });
       } catch (err) {
