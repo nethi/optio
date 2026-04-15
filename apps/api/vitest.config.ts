@@ -2,6 +2,9 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    env: {
+      OPTIO_AUTH_DISABLED: "true",
+    },
     coverage: {
       enabled: !!process.env.CI,
       provider: "v8",
