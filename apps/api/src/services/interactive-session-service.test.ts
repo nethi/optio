@@ -51,6 +51,10 @@ vi.mock("../logger.js", () => ({
   },
 }));
 
+vi.mock("../routes/github-app.js", () => ({
+  getCredentialSecret: vi.fn().mockReturnValue("test-secret"),
+}));
+
 import { db } from "../db/client.js";
 import { publishEvent, publishSessionEvent } from "./event-bus.js";
 import { getOrCreateRepoPod } from "./repo-pool-service.js";
