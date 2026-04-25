@@ -311,7 +311,14 @@ export async function resolveSecretsForTask(
         // Not found at repo scope — fall through to global
       }
     }
-    resolved[name] = await retrieveSecretWithFallback(name, "global", workspaceId, userId);
+
+    try {
+      resolved[name] = await retrieveSecretWithFallback(name, "global", workspaceId, userId);
+    } catch {
+      // If a required secret is completely missing from all scopes, we just omit it from the record.
+      // The task-worker will perform strict validation later and throw a user-friendly error message
+      // with instructions on how to fix it, rather than crashing with a generic "Secret not found".
+    }
   }
   return resolved;
 }
