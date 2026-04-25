@@ -41,9 +41,11 @@ export async function getAgentCredentials(
   // ── Claude Code credentials ──────────────────────────────────────
   if (agentType === "claude-code") {
     const claudeAuthMode =
-      ((await retrieveSecretWithFallback("CLAUDE_AUTH_MODE", "global", workspaceId).catch(
-        () => null,
-      )) as any) ?? "api-key";
+      ((await retrieveSecretWithFallback(
+        "CLAUDE_AUTH_MODE",
+        workspaceId ? workspaceId : "global",
+        workspaceId,
+      ).catch(() => null)) as any) ?? "api-key";
 
     if (claudeAuthMode === "max-subscription") {
       // Max subscription: fetch OAuth token from host keychain via auth proxy
@@ -59,7 +61,7 @@ export async function getAgentCredentials(
       // OAuth token mode: retrieve from secrets store
       const oauthToken = await retrieveSecretWithFallback(
         "CLAUDE_CODE_OAUTH_TOKEN",
-        "global",
+        workspaceId ? workspaceId : "global",
         workspaceId,
         userId,
       ).catch(() => null);
@@ -106,10 +108,10 @@ export async function getAgentCredentials(
         log.info("Using GKE workload identity for Vertex AI (no service account key provided)");
       }
     } else if (claudeAuthMode === "api-key") {
-      // API key mode: retrieve ANTHROPIC_API_KEY
+      // API key mode
       const apiKey = await retrieveSecretWithFallback(
         "ANTHROPIC_API_KEY",
-        "global",
+        workspaceId ? workspaceId : "global",
         workspaceId,
         userId,
       ).catch(() => null);
@@ -125,9 +127,11 @@ export async function getAgentCredentials(
   // ── Codex credentials ────────────────────────────────────────────
   if (agentType === "codex") {
     const codexAuthMode =
-      ((await retrieveSecretWithFallback("CODEX_AUTH_MODE", "global", workspaceId).catch(
-        () => null,
-      )) as any) ?? "api-key";
+      ((await retrieveSecretWithFallback(
+        "CODEX_AUTH_MODE",
+        workspaceId ? workspaceId : "global",
+        workspaceId,
+      ).catch(() => null)) as any) ?? "api-key";
 
     if (codexAuthMode === "app-server") {
       const appServerUrl = await retrieveSecretWithFallback(
@@ -143,7 +147,7 @@ export async function getAgentCredentials(
       // API key mode
       const apiKey = await retrieveSecretWithFallback(
         "OPENAI_API_KEY",
-        "global",
+        workspaceId ? workspaceId : "global",
         workspaceId,
         userId,
       ).catch(() => null);
@@ -159,9 +163,11 @@ export async function getAgentCredentials(
   // ── Gemini credentials ───────────────────────────────────────────
   if (agentType === "gemini") {
     const geminiAuthMode =
-      ((await retrieveSecretWithFallback("GEMINI_AUTH_MODE", "global", workspaceId).catch(
-        () => null,
-      )) as any) ?? "api-key";
+      ((await retrieveSecretWithFallback(
+        "GEMINI_AUTH_MODE",
+        workspaceId ? workspaceId : "global",
+        workspaceId,
+      ).catch(() => null)) as any) ?? "api-key";
 
     if (geminiAuthMode === "vertex-ai") {
       const projectId = await retrieveSecretWithFallback(
@@ -182,7 +188,7 @@ export async function getAgentCredentials(
       // API key mode
       const apiKey = await retrieveSecretWithFallback(
         "GEMINI_API_KEY",
-        "global",
+        workspaceId ? workspaceId : "global", // Try workspace scope if available
         workspaceId,
         userId,
       ).catch(() => null);
@@ -225,7 +231,7 @@ export async function getAgentCredentials(
   if (agentType === "groq") {
     const apiKey = await retrieveSecretWithFallback(
       "GROQ_API_KEY",
-      "global",
+      workspaceId ? workspaceId : "global",
       workspaceId,
       userId,
     ).catch(() => null);
@@ -239,14 +245,31 @@ export async function getAgentCredentials(
 
   // ── OpenClaw credentials ─────────────────────────────────────────
   if (agentType === "openclaw") {
-    const apiKey = await retrieveSecretWithFallback(
-      "OPENCLAW_API_KEY",
-      "global",
+    // OpenClaw needs all its keys passed in
+    const anthropicKey = await retrieveSecretWithFallback(
+      "ANTHROPIC_API_KEY",
+      workspaceId ? workspaceId : "global",
       workspaceId,
       userId,
     ).catch(() => null);
-    if (apiKey) {
-      env.OPENCLAW_API_KEY = apiKey as string;
+    if (anthropicKey) env.ANTHROPIC_API_KEY = anthropicKey as string;
+
+    const openaiKey = await retrieveSecretWithFallback(
+      "OPENAI_API_KEY",
+      workspaceId ? workspaceId : "global",
+      workspaceId,
+      userId,
+    ).catch(() => null);
+    if (openaiKey) env.OPENAI_API_KEY = openaiKey as string;
+
+    const openclawKey = await retrieveSecretWithFallback(
+      "OPENCLAW_API_KEY",
+      workspaceId ? workspaceId : "global",
+      workspaceId,
+      userId,
+    ).catch(() => null);
+    if (openclawKey) {
+      env.OPENCLAW_API_KEY = openclawKey as string;
       log.info("Injected OPENCLAW_API_KEY from secrets store");
     } else {
       log.warn("No OPENCLAW_API_KEY found");
@@ -257,12 +280,12 @@ export async function getAgentCredentials(
   if (agentType === "opencode") {
     const baseUrl = await retrieveSecretWithFallback(
       "OPENCODE_DEFAULT_BASE_URL",
-      "global",
+      workspaceId ? workspaceId : "global",
       workspaceId,
     ).catch(() => null);
     const model = await retrieveSecretWithFallback(
       "OPENCODE_DEFAULT_MODEL",
-      "global",
+      workspaceId ? workspaceId : "global",
       workspaceId,
     ).catch(() => null);
 
