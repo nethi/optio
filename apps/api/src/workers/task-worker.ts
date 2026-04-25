@@ -675,6 +675,18 @@ export function startTaskWorker() {
             log.warn("API key mode selected but no ANTHROPIC_API_KEY found");
           }
         }
+        if (task.agentType === "gemini") {
+          if (
+            geminiAuthMode === "api-key" &&
+            !allEnv.GEMINI_API_KEY &&
+            !allEnv.GOOGLE_GENAI_API_KEY
+          ) {
+            throw new Error(
+              "Gemini API key mode selected but no GEMINI_API_KEY secret found. " +
+                "Please add a Gemini API key to your secrets.",
+            );
+          }
+        }
 
         // Inject repo-level setup config into pod env
         if (repoConfig?.extraPackages) {
