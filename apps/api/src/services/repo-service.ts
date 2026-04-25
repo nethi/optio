@@ -147,8 +147,8 @@ export async function getRepoByUrl(
       .where(and(eq(repos.repoUrl, normalized), isNull(repos.workspaceId)));
     if (nullWsRepo) return decryptRepoRow(nullWsRepo);
     // Final fallback: any workspace (background jobs like ticket sync have no workspace context)
-    const [anyRepo] = await db.select().from(repos).where(eq(repos.repoUrl, normalized));
-    if (anyRepo) return decryptRepoRow(anyRepo);
+    const anyRepos = await db.select().from(repos).where(eq(repos.repoUrl, normalized));
+    if (anyRepos.length > 0) return decryptRepoRow(anyRepos[0]);
     return null;
   }
   const [repo] = await db

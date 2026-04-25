@@ -22,7 +22,7 @@ export async function syncAllTickets(): Promise<number> {
     .where(eq(ticketProviders.enabled, true));
 
   // Fetch configured repos once before the provider loop (avoids redundant queries)
-  const configuredRepos = await db.select({ repoUrl: repos.repoUrl }).from(repos);
+  const configuredRepos = await db.select().from(repos);
 
   let totalSynced = 0;
 
@@ -160,6 +160,7 @@ export async function syncAllTickets(): Promise<number> {
           ticketSource: ticket.source,
           ticketExternalId: ticket.externalId,
           metadata: { ticketUrl: ticket.url },
+          workspaceId: repoConfig?.workspaceId, // Pass the workspace id explicitly
         });
 
         await taskService.transitionTask(task.id, TaskState.QUEUED, "ticket_sync");
