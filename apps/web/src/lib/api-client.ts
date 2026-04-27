@@ -728,6 +728,17 @@ export const api = {
 
   logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
 
+  // Users
+  lookupUserByEmail: (email: string) =>
+    request<{
+      user: {
+        id: string;
+        email: string;
+        displayName: string;
+        avatarUrl: string | null;
+      };
+    }>(`/api/users/lookup?email=${encodeURIComponent(email)}`),
+
   // Interactive Sessions
   listSessions: (params?: {
     repoUrl?: string;
@@ -756,6 +767,13 @@ export const api = {
 
   endSession: (id: string) =>
     request<{ session: any }>(`/api/sessions/${id}/end`, { method: "POST" }),
+
+  getSessionChat: (sessionId: string, params?: { limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const query = qs.toString();
+    return request<{ events: any[] }>(`/api/sessions/${sessionId}/chat${query ? `?${query}` : ""}`);
+  },
 
   getSessionPrs: (sessionId: string) => request<{ prs: any[] }>(`/api/sessions/${sessionId}/prs`),
 
@@ -915,6 +933,9 @@ export const api = {
     description?: string;
     prompt: string;
     repoUrl?: string;
+    layout?: "commands" | "skill-dir";
+    files?: Array<{ relativePath: string; content: string }>;
+    agentTypes?: string[];
     enabled?: boolean;
   }) =>
     request<{ skill: any }>("/api/skills", {
@@ -929,6 +950,38 @@ export const api = {
     }),
 
   deleteSkill: (id: string) => request<void>(`/api/skills/${id}`, { method: "DELETE" }),
+
+  // Installed (marketplace-sourced) Skills — Phase 2 of issue #497
+  listInstalledSkills: (scope?: string) => {
+    const qs = scope ? `?scope=${encodeURIComponent(scope)}` : "";
+    return request<{ skills: any[] }>(`/api/installed-skills${qs}`);
+  },
+  getInstalledSkill: (id: string) => request<{ skill: any }>(`/api/installed-skills/${id}`),
+  createInstalledSkill: (data: {
+    name: string;
+    description?: string;
+    sourceUrl: string;
+    ref?: string;
+    subpath?: string;
+    repoUrl?: string;
+    agentTypes?: string[];
+    enabled?: boolean;
+  }) =>
+    request<{ skill: any }>("/api/installed-skills", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateInstalledSkill: (id: string, data: Record<string, unknown>) =>
+    request<{ skill: any }>(`/api/installed-skills/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteInstalledSkill: (id: string) =>
+    request<void>(`/api/installed-skills/${id}`, { method: "DELETE" }),
+  syncInstalledSkill: (id: string) =>
+    request<{ skill: any }>(`/api/installed-skills/${id}/sync`, {
+      method: "POST",
+    }),
 
   // PR Reviews — canonical endpoints live under /api/pr-reviews.
   listPullRequests: (params?: { repoId?: string }) => {
@@ -1021,6 +1074,8 @@ export const api = {
     enabledTools?: string[];
     confirmWrites?: boolean;
     maxTurns?: number;
+    defaultReviewAgentType?: string | null;
+    defaultReviewModel?: string | null;
   }) =>
     request<{ settings: any }>("/api/optio/settings", {
       method: "PUT",
@@ -1610,4 +1665,71 @@ export const api = {
       error?: string;
       catalog: unknown;
     }>(`/api/agents/${provider}/options/refresh`, { method: "POST" }),
+
+  // ── Persistent Agents ──────────────────────────────────────────────────
+  listPersistentAgents: () => request<{ agents: any[] }>(`/api/persistent-agents`),
+
+  getPersistentAgent: (id: string) =>
+    request<{ agent: any; inbox: { pending: number; oldest: string | null } }>(
+      `/api/persistent-agents/${id}`,
+    ),
+
+  createPersistentAgent: (data: {
+    slug: string;
+    name: string;
+    description?: string;
+    agentRuntime?: string;
+    model?: string | null;
+    systemPrompt?: string | null;
+    agentsMd?: string | null;
+    initialPrompt: string;
+    podLifecycle?: "always-on" | "sticky" | "on-demand";
+    idlePodTimeoutMs?: number;
+    maxTurnDurationMs?: number;
+    maxTurns?: number;
+    consecutiveFailureLimit?: number;
+    enabled?: boolean;
+  }) =>
+    request<{ agent: any }>(`/api/persistent-agents`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updatePersistentAgent: (id: string, data: Record<string, unknown>) =>
+    request<{ agent: any }>(`/api/persistent-agents/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deletePersistentAgent: (id: string) =>
+    request<undefined>(`/api/persistent-agents/${id}`, { method: "DELETE" }),
+
+  sendPersistentAgentMessage: (
+    id: string,
+    body: string,
+    opts?: { broadcasted?: boolean; senderName?: string },
+  ) =>
+    request<{ ok: boolean }>(`/api/persistent-agents/${id}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ body, ...opts }),
+    }),
+
+  listPersistentAgentMessages: (id: string, limit?: number) => {
+    const qs = limit ? `?limit=${limit}` : "";
+    return request<{ messages: any[] }>(`/api/persistent-agents/${id}/messages${qs}`);
+  },
+
+  listPersistentAgentTurns: (id: string, limit?: number) => {
+    const qs = limit ? `?limit=${limit}` : "";
+    return request<{ turns: any[] }>(`/api/persistent-agents/${id}/turns${qs}`);
+  },
+
+  getPersistentAgentTurn: (id: string, turnId: string) =>
+    request<{ turn: any; logs: any[] }>(`/api/persistent-agents/${id}/turns/${turnId}`),
+
+  controlPersistentAgent: (id: string, intent: "pause" | "resume" | "archive" | "restart") =>
+    request<{ ok: boolean; intent: string }>(`/api/persistent-agents/${id}/control`, {
+      method: "POST",
+      body: JSON.stringify({ intent }),
+    }),
 };

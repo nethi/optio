@@ -590,12 +590,48 @@ export function startTaskWorker() {
           }
         }
 
-        const skills = await getSkillsForTask(task.repoUrl, taskWorkspaceId);
+        const skills = await getSkillsForTask(task.repoUrl, taskWorkspaceId, task.agentType);
         if (skills.length > 0) {
           agentConfig.setupFiles = agentConfig.setupFiles ?? [];
           const skillFiles = buildSkillSetupFiles(skills);
           agentConfig.setupFiles.push(...skillFiles);
-          log.info({ count: skills.length }, "Injecting custom skills");
+          log.info({ count: skills.length, agentType: task.agentType }, "Injecting custom skills");
+        }
+
+        // ── Marketplace-installed skills (Claude Code only for now) ─────
+        if (task.agentType === "claude-code") {
+          const { getInstalledSkillsForTask } =
+            await import("../services/installed-skill-service.js");
+          const { readInstalledSkillFiles } = await import("../workers/skill-sync-worker.js");
+          const installed = await getInstalledSkillsForTask(
+            task.repoUrl,
+            taskWorkspaceId,
+            task.agentType,
+          );
+          if (installed.length > 0) {
+            agentConfig.setupFiles = agentConfig.setupFiles ?? [];
+            let injected = 0;
+            for (const skill of installed) {
+              try {
+                const files = await readInstalledSkillFiles(skill.resolvedSha!, skill.subpath);
+                for (const f of files) {
+                  agentConfig.setupFiles.push({
+                    path: `.claude/skills/${skill.name}/${f.relativePath}`,
+                    content: "",
+                    contentBase64: f.content.toString("base64"),
+                    executable: f.executable,
+                  });
+                }
+                injected++;
+              } catch (err) {
+                log.warn(
+                  { err, skillId: skill.id, name: skill.name },
+                  "Skipping installed skill — cache miss or read error",
+                );
+              }
+            }
+            log.info({ injected, total: installed.length }, "Injecting marketplace skills");
+          }
         }
 
         // Encode setup files

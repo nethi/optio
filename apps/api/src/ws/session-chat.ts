@@ -1,7 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { getRuntime } from "../services/container-service.js";
-import { getSession } from "../services/interactive-session-service.js";
+import {
+  appendSessionChatEvent,
+  getSession,
+  listSessionChatEvents,
+} from "../services/interactive-session-service.js";
 import { getSettings } from "../services/optio-settings-service.js";
 import { getAgentCredentials } from "../services/agent-credential-service.js";
 import { db } from "../db/client.js";
@@ -169,12 +173,38 @@ export async function sessionChatWs(app: FastifyInstance) {
       },
     });
 
-    // WebSocket keepalive: send ping every 20s to prevent idle timeout
-    const pingInterval = setInterval(() => {
-      if (socket.readyState === 1) {
-        socket.ping();
+    // Catch-up: replay persisted chat events so reconnecting clients see
+    // the conversation from before the WebSocket dropped. The REST endpoint
+    // is the primary loader, but this also helps clients that connect via
+    // the WebSocket without first calling the REST endpoint.
+    try {
+      const history = await listSessionChatEvents(sessionId);
+      for (const ev of history) {
+        send({
+          type: "chat_event",
+          event: {
+            taskId: sessionId,
+            timestamp:
+              ev.timestamp instanceof Date
+                ? ev.timestamp.toISOString()
+                : (ev.timestamp as unknown as string),
+            type: (ev.logType ?? "text") as
+              | "text"
+              | "tool_use"
+              | "tool_result"
+              | "thinking"
+              | "system"
+              | "error"
+              | "info",
+            content: ev.content,
+            metadata: ev.metadata ?? undefined,
+          },
+          catchUp: true,
+        });
       }
-    }, 20000);
+    } catch (err) {
+      log.warn({ err }, "Failed to replay session chat history");
+    }
 
     /**
      * Execute a single claude prompt in the pod worktree.
@@ -272,6 +302,7 @@ export async function sessionChatWs(app: FastifyInstance) {
                 : parseClaudeEvent(line, sessionId);
             for (const entry of entries) {
               send({ type: "chat_event", event: entry });
+              persistChatEvent(sessionId, entry, log);
 
               // Extract cost from result events
               if (entry.metadata?.cost && typeof entry.metadata.cost === "number") {
@@ -289,22 +320,15 @@ export async function sessionChatWs(app: FastifyInstance) {
 
         execSession.stderr.on("data", (chunk: Buffer) => {
           const text = chunk.toString("utf-8").trim();
-          // Skip harmless warnings
-          if (
-            text &&
-            !text.includes("no stdin data received") &&
-            !text.includes("approval mode: yolo")
-          ) {
-            log.warn({ agentType, text }, "Agent stderr output");
-            send({
-              type: "chat_event",
-              event: {
-                taskId: sessionId,
-                timestamp: new Date().toISOString(),
-                type: "error",
-                content: text,
-              },
-            });
+          if (text) {
+            const entry = {
+              taskId: sessionId,
+              timestamp: new Date().toISOString(),
+              type: "error" as const,
+              content: text,
+            };
+            send({ type: "chat_event", event: entry });
+            persistChatEvent(sessionId, entry, log);
           }
         });
 
@@ -319,6 +343,7 @@ export async function sessionChatWs(app: FastifyInstance) {
                   : parseClaudeEvent(outputBuffer, sessionId);
               for (const entry of entries) {
                 send({ type: "chat_event", event: entry });
+                persistChatEvent(sessionId, entry, log);
               }
               outputBuffer = "";
             }
@@ -358,6 +383,15 @@ export async function sessionChatWs(app: FastifyInstance) {
             send({ type: "error", message: "Empty message" });
             return;
           }
+          // Persist the user's prompt so reconnecting clients see their own
+          // side of the conversation, not just the agent's responses. Use
+          // logType=user_message so the UI can render it distinctly.
+          appendSessionChatEvent({
+            sessionId,
+            content: msg.content,
+            stream: "stdin",
+            logType: "user_message",
+          }).catch((err) => log.warn({ err }, "Failed to persist user message"));
           runPrompt(msg.content).catch((err) => {
             log.error({ err }, "Prompt execution failed");
             send({ type: "error", message: "Prompt failed" });
@@ -395,7 +429,6 @@ export async function sessionChatWs(app: FastifyInstance) {
 
     socket.on("close", () => {
       log.info("Session chat disconnected");
-      clearInterval(pingInterval);
       releaseConnection(clientIp);
       if (execSession) {
         execSession.close();
@@ -413,4 +446,23 @@ async function updateSessionCost(sessionId: string, costUsd: number) {
     .update(interactiveSessions)
     .set({ costUsd: costUsd.toFixed(4) })
     .where(eq(interactiveSessions.id, sessionId));
+}
+
+/**
+ * Fire-and-forget persistence for an agent chat event. Failures are logged
+ * but don't break the live stream — the client still gets the event over
+ * the WebSocket; only history-on-reconnect is impacted.
+ */
+function persistChatEvent(
+  sessionId: string,
+  entry: import("@optio/shared").AgentLogEntry,
+  log: { warn: (obj: unknown, msg: string) => void },
+) {
+  appendSessionChatEvent({
+    sessionId,
+    content: entry.content,
+    logType: entry.type,
+    metadata: entry.metadata,
+    timestamp: entry.timestamp ? new Date(entry.timestamp) : undefined,
+  }).catch((err) => log.warn({ err }, "Failed to persist session chat event"));
 }
