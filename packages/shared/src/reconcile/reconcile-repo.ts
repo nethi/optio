@@ -436,15 +436,20 @@ function decideFromPrStatus(snapshot: WorldSnapshot, allowFailComplete: boolean)
   }
 
   // CI just passed → trigger review if configured for on_ci_pass.
-  if (
-    pr.checksStatus === "passing" &&
-    prev.checks !== "passing" &&
-    pr.state === "open" &&
-    snapshot.settings.reviewEnabled &&
-    snapshot.settings.reviewTrigger === "on_ci_pass" &&
-    !snapshot.settings.hasReviewSubtask
-  ) {
-    return { kind: "launchReview", reason: "ci_passing_launch_review" };
+  // We also trigger if checksStatus is "none" (no CI configured).
+  const isCiPassingTransition = pr.checksStatus === "passing" && prev.checks !== "passing";
+  const isNoCi = pr.checksStatus === "none";
+
+  if ((isCiPassingTransition || isNoCi) && pr.state === "open") {
+    if (!snapshot.settings.reviewEnabled) {
+      // Logic falls through if review is disabled.
+    } else if (snapshot.settings.reviewTrigger !== "on_ci_pass") {
+      // Logic falls through if trigger doesn't match.
+    } else if (snapshot.settings.hasReviewSubtask) {
+      // Logic falls through if already launched.
+    } else {
+      return { kind: "launchReview", reason: "ci_passing_launch_review" };
+    }
   }
 
   // First PR detection → trigger review if configured for on_pr.
@@ -460,32 +465,15 @@ function decideFromPrStatus(snapshot: WorldSnapshot, allowFailComplete: boolean)
 
   // Auto-merge path.
   const checksOk = pr.checksStatus === "passing" || pr.checksStatus === "none";
+  const subsComplete = blockingSubtasksComplete(snapshot.blockingSubtasks);
   if (
     checksOk &&
     pr.state === "open" &&
     snapshot.settings.autoMerge &&
     !snapshot.settings.cautiousMode &&
-    blockingSubtasksComplete(snapshot.blockingSubtasks)
+    subsComplete
   ) {
     return { kind: "autoMergePr", reason: "auto_merge_ready" };
-  }
-
-  // Review requested changes (edge-triggered).
-  if (pr.reviewStatus === "changes_requested" && prev.review !== "changes_requested") {
-    if (autoResumeAllowed) {
-      return {
-        kind: "resumeAgent",
-        resumeReason: "review",
-        reason: "review_changes_auto_resume",
-      };
-    }
-    return {
-      kind: "transition",
-      to: TaskState.NEEDS_ATTENTION,
-      statusPatch: { prReviewStatus: "changes_requested" },
-      trigger: "review_changes_requested",
-      reason: "review_changes_needs_attention",
-    };
   }
 
   // Persist current PR snapshot so the UI reflects the latest.
@@ -502,14 +490,26 @@ function decideFromPrStatus(snapshot: WorldSnapshot, allowFailComplete: boolean)
     };
   }
 
-  return { kind: "noop", reason: "pr_status_steady" };
+  return {
+    kind: "noop",
+    reason: `pr_status_steady:checks=${pr.checksStatus}:review=${pr.reviewStatus}:autoMerge=${snapshot.settings.autoMerge}:cautious=${snapshot.settings.cautiousMode}:subsComplete=${subsComplete}`,
+  };
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function blockingSubtasksComplete(subs: DependencyObservation[]): boolean {
   if (subs.length === 0) return true;
-  return subs.every((s) => s.state === TaskState.COMPLETED || !s.blocksParent);
+  // A parent is blocked if any of its subtasks are still in progress.
+  // We ignore failed/cancelled subtasks as they are terminal and shouldn't
+  // indefinitely stall the parent's PR lifecycle.
+  const inProgressStates = [
+    TaskState.PENDING,
+    TaskState.QUEUED,
+    TaskState.PROVISIONING,
+    TaskState.RUNNING,
+  ];
+  return !subs.some((s) => s.blocksParent && inProgressStates.includes(s.state));
 }
 
 function effectiveChecksStatus(

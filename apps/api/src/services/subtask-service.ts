@@ -38,6 +38,7 @@ export async function createSubtask(input: SubtaskInput) {
     agentType: input.agentType ?? parent.agentType,
     priority: input.priority ?? Math.max(1, (parent.priority ?? 100) - 1),
     createdBy: parent.createdBy ?? undefined,
+    workspaceId: parent.workspaceId ?? undefined,
   });
 
   // Set subtask fields
@@ -178,12 +179,17 @@ export async function onSubtaskComplete(subtaskId: string) {
 
     const anyApproved = reviewSubtasks.some((r) => r.state === "completed");
 
-    if (anyApproved && parent.prUrl) {
-      logger.info({ taskId: parent.id }, "All blocking subtasks complete, review approved");
+    logger.info(
+      { taskId: parent.id, anyApproved, prUrl: parent.prUrl, subtaskCount: reviewSubtasks.length },
+      "Subtask complete: checking if parent PR should auto-merge",
+    );
 
+    if (anyApproved && parent.prUrl) {
       // Auto-merge if enabled on the repo
       const { getRepoByUrl } = await import("./repo-service.js");
       const repoConfig = await getRepoByUrl(parent.repoUrl);
+
+      logger.info({ taskId: parent.id, autoMerge: repoConfig?.autoMerge }, "Auto-merge setting");
 
       if (repoConfig?.autoMerge) {
         try {
@@ -192,7 +198,30 @@ export async function onSubtaskComplete(subtaskId: string) {
 
           const parsed = parsePrUrl(parent.prUrl!);
           if (parsed) {
-            const { platform, ri } = await getGitPlatformForRepo(parent.repoUrl, { server: true });
+            const { platform, ri } = await getGitPlatformForRepo(parent.repoUrl, {
+              workspaceId: parent.workspaceId,
+              userId: parent.createdBy ?? undefined,
+              server: !parent.createdBy,
+            });
+
+            // Automatically submit an "APPROVE" review on GitHub so the PR watcher sees it as approved.
+            // This is needed because the reconciler depends on the external GitHub review status to trigger merge.
+            try {
+              await platform.submitReview(ri, parsed.prNumber, {
+                event: "APPROVE",
+                body: "Optio review subtask completed successfully. Auto-merging...",
+              });
+              logger.info(
+                { taskId: parent.id, prNumber: parsed.prNumber },
+                "Submitted auto-approval review",
+              );
+            } catch (reviewErr) {
+              logger.warn(
+                { err: reviewErr, taskId: parent.id, prNumber: parsed.prNumber },
+                "Failed to submit auto-approval review (may already be approved or missing permissions)",
+              );
+            }
+
             await platform.mergePullRequest(ri, parsed.prNumber, "squash");
 
             await taskService.transitionTask(

@@ -443,10 +443,11 @@ async function applyLaunchReview(snapshot: WorldSnapshot): Promise<ExecuteOutcom
     return { status: "error", reason: "wrong_kind", error: new Error("not repo") };
   }
   const taskId = snapshot.run.ref.id;
+  const workspaceId = snapshot.run.spec.workspaceId;
   const { launchReview } = await import("./review-service.js");
   try {
     await launchReview(taskId);
-    return { status: "applied", reason: "review_launched" };
+    return { status: "applied", reason: `review_launched:ws=${workspaceId}` };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { status: "error", reason: msg, error: err };
