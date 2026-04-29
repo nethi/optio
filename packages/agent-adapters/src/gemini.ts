@@ -64,6 +64,8 @@ export class GeminiAdapter implements AgentAdapter {
       OPTIO_PROMPT: prompt,
       OPTIO_AGENT_TYPE: "gemini",
       OPTIO_BRANCH_NAME: `${TASK_BRANCH_PREFIX}${input.taskId}`,
+      // Ensure the CLI doesn't prompt for trust in isolated ephemeral pods
+      GEMINI_CLI_TRUST_WORKSPACE: "true",
     };
 
     const requiredSecrets: string[] = [];
@@ -163,6 +165,13 @@ export class GeminiAdapter implements AgentAdapter {
     let errorMessage: string | undefined;
     let hasError = false;
     let lastAssistantMessage: string | undefined;
+
+    // Check for JSON error messages embedded in non-JSON output
+    const apiKeyErrorMatch = logs.match(/API key not valid|API_KEY_INVALID/i);
+    if (apiKeyErrorMatch) {
+      errorMessage = "API key not valid. Please pass a valid API key.";
+      hasError = true;
+    }
 
     for (const line of logs.split("\n")) {
       if (!line.trim()) continue;

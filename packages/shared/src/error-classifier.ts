@@ -235,6 +235,18 @@ const ERROR_PATTERNS: Array<{
     }),
   },
   {
+    pattern: /API key not valid|API_KEY_INVALID/i,
+    classify: () => ({
+      category: "auth",
+      title: "Invalid API key",
+      description:
+        "The provided API key is invalid. This can affect Gemini, Anthropic, or OpenAI depending on which agent was running.",
+      remedy:
+        "Go to Secrets and verify your API keys (GEMINI_API_KEY, ANTHROPIC_API_KEY, etc.) are valid and have not been revoked.",
+      retryable: false,
+    }),
+  },
+  {
     pattern: /exit code: (\d+)/i,
     classify: (match) => ({
       category: "agent",

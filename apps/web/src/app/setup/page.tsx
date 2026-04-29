@@ -1740,7 +1740,8 @@ export default function SetupPage() {
                                   setGeminiError("");
                                 }}
                                 onPaste={(e) => {
-                                  const pasted = e.clipboardData.getData("text");
+                                  e.preventDefault();
+                                  const pasted = e.clipboardData.getData("text").trim();
                                   if (pasted) {
                                     setGeminiKey(pasted);
                                     setGeminiValidated(false);
