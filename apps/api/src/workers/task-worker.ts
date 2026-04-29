@@ -78,6 +78,18 @@ function withClaimLock<T>(fn: () => Promise<T>): Promise<T> {
 
 export function startTaskWorker() {
   console.log("[DEBUG WORKER] Initializing Task Worker...");
+  
+  // Critical check for environment variables needed for worker startup
+  const encryptionKey = process.env.OPTIO_ENCRYPTION_KEY;
+  if (!encryptionKey) {
+    console.error("[DEBUG WORKER] CRITICAL ERROR: OPTIO_ENCRYPTION_KEY is missing. Cannot initialize worker.");
+    // In a real scenario, you might want to throw or exit here, but for debugging, we'll log and let it potentially fail later.
+  }
+  const maxConcurrent = parseIntEnv("OPTIO_MAX_CONCURRENT", 5);
+  if (isNaN(maxConcurrent)) {
+    console.error(`[DEBUG WORKER] CRITICAL ERROR: OPTIO_MAX_CONCURRENT is not a valid number: ${process.env.OPTIO_MAX_CONCURRENT}. Cannot initialize worker.`);
+  }
+
   const worker = new Worker(
     "tasks",
     instrumentWorkerProcessor("task-worker", async (job) => {
