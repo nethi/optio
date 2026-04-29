@@ -77,9 +77,11 @@ function withClaimLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 export function startTaskWorker() {
+  console.log("[DEBUG WORKER] Initializing Task Worker...");
   const worker = new Worker(
     "tasks",
     instrumentWorkerProcessor("task-worker", async (job) => {
+      console.log(`[DEBUG WORKER] [JOB ${job.id}] Received job data:`, JSON.stringify(job.data));
       const {
         taskId,
         resumeSessionId,

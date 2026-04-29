@@ -131,6 +131,7 @@ export async function getOrCreateRepoPod(
 
     // Try to find a ready pod with capacity
     const rt = getRuntime();
+    console.log(`[DEBUG PODS] Checking ${existingPods.length} existing pod records for ${repoUrl}`);
     for (const pod of existingPods) {
       if (pod.state === "ready" && pod.podName && pod.activeTaskCount < maxAgentsPerPod) {
         try {
@@ -139,10 +140,12 @@ export async function getOrCreateRepoPod(
             name: pod.podName,
           });
           if (status.state === "running") {
+            console.log(`[DEBUG PODS] Found healthy existing pod: ${pod.podName}`);
             return pod as RepoPod;
           }
-        } catch {
-          // Pod is gone, clean up record
+          console.warn(`[DEBUG PODS] Existing pod record ${pod.podName} is in state ${status.state} in K8s - cleaning up`);
+        } catch (err) {
+          console.warn(`[DEBUG PODS] Existing pod record ${pod.podName} not found in K8s - cleaning up`);
         }
         await db.delete(repoPods).where(eq(repoPods.id, pod.id));
       } else if (pod.state === "provisioning") {
