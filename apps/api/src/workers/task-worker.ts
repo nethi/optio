@@ -104,6 +104,7 @@ export function startTaskWorker() {
       let repoPodId: string | null = null;
 
       try {
+        console.log(`[DEBUG WORKER] Starting task-worker for taskId=${taskId}`);
         // Verify task is in queued state before proceeding
         // (BullMQ may retry stale jobs from a previous failed attempt)
         const currentTask = await taskService.getTask(taskId);
@@ -150,6 +151,7 @@ export function startTaskWorker() {
         const { getRepoByUrl } = await import("../services/repo-service.js");
         const taskWorkspaceId = currentTask.workspaceId ?? null;
         const repoConfig = await getRepoByUrl(currentTask.repoUrl, taskWorkspaceId);
+        console.log(`[DEBUG WORKER] Loaded repoConfig for taskId=${taskId}`);
 
         if (repoConfig?.offPeakOnly && !currentTask.ignoreOffPeak) {
           const delayMs = msUntilOffPeak();
@@ -184,6 +186,7 @@ export function startTaskWorker() {
         const effectiveRepoConcurrency = maxAgentsPerPod * maxPodInstances;
 
         const claimed = await withClaimLock(async () => {
+          console.log(`[DEBUG WORKER] Inside claim lock for taskId=${taskId}`);
           const globalMax = parseIntEnv("OPTIO_MAX_CONCURRENT", 5);
 
           // Global concurrency check
@@ -241,6 +244,7 @@ export function startTaskWorker() {
 
         // Get agent adapter and build config
         const adapter = getAdapter(task.agentType);
+        console.log(`[DEBUG WORKER] Selected adapter ${task.agentType} for taskId=${taskId}`);
         const claudeAuthMode =
           ((await retrieveSecretWithFallback("CLAUDE_AUTH_MODE", "global", taskWorkspaceId).catch(
             () => null,
@@ -606,6 +610,7 @@ export function startTaskWorker() {
           ]),
         ];
         const taskUserId = task.createdBy ?? null;
+        console.log(`[DEBUG WORKER] Resolving secrets for taskId=${taskId}, userId=${taskUserId}, wsId=${taskWorkspaceId}`);
         const resolvedSecrets = await resolveSecretsForTask(
           secretNames,
           task.repoUrl,
@@ -734,6 +739,7 @@ export function startTaskWorker() {
 
         // Inject secrets into pod env for setup commands (global + repo-scoped).
         // Repo-scoped secrets override global secrets with the same name.
+        console.log(`[DEBUG WORKER] Resolving setup secrets for taskId=${taskId}`);
         const setupSecrets = await resolveSecretsForSetup(task.repoUrl, taskWorkspaceId);
         const setupSecretCount = Object.keys(setupSecrets).length;
         if (setupSecretCount > 0) {
@@ -742,8 +748,9 @@ export function startTaskWorker() {
         }
 
         // Get or create a repo pod (with multi-pod scheduling)
-        log.info("Getting repo pod");
+        console.log(`[DEBUG WORKER] Getting repo pod for taskId=${taskId}`);
         const isRetry = (task.retryCount ?? 0) > 0;
+
         const imageConfig = repoConfig
           ? { preset: (repoConfig.imagePreset ?? "base") as PresetImageId }
           : undefined;
