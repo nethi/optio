@@ -79,16 +79,20 @@ export interface RepoRecord {
 function decryptRepoRow(row: typeof repos.$inferSelect): RepoRecord {
   let slackWebhookUrl: string | null = null;
   if (row.encryptedSlackWebhookUrl && row.slackWebhookUrlIv && row.slackWebhookUrlAuthTag) {
-    const aad = Buffer.from(`repo:${row.id}:slackWebhookUrl`);
-    slackWebhookUrl = decrypt(
-      {
-        alg: row.slackWebhookUrlAlg ?? ALG_AES_256_GCM_V1,
-        iv: row.slackWebhookUrlIv,
-        ciphertext: row.encryptedSlackWebhookUrl,
-        authTag: row.slackWebhookUrlAuthTag,
-      },
-      aad,
-    );
+    try {
+      const aad = Buffer.from(`repo:${row.id}:slackWebhookUrl`);
+      slackWebhookUrl = decrypt(
+        {
+          alg: row.slackWebhookUrlAlg ?? ALG_AES_256_GCM_V1,
+          iv: row.slackWebhookUrlIv,
+          ciphertext: row.encryptedSlackWebhookUrl,
+          authTag: row.slackWebhookUrlAuthTag,
+        },
+        aad,
+      );
+    } catch (err) {
+      logger.warn({ err, repoId: row.id }, "Failed to decrypt slackWebhookUrl for repo");
+    }
   }
   const {
     encryptedSlackWebhookUrl: _e,

@@ -77,7 +77,9 @@ export function validateEncryptionKey(): void {
  * identifying context in the `secrets` table.  Format: `name|scope|workspaceId`.
  */
 export function buildSecretAAD(name: string, scope: string, workspaceId?: string | null): Buffer {
-  return Buffer.from(`${name}|${scope}|${workspaceId ?? "global"}`);
+  const aad = `${name}|${scope}|${workspaceId ?? "global"}`;
+  // logger is not easily available here as it's a sync function, but we can log from callers
+  return Buffer.from(aad);
 }
 
 export function encrypt(plaintext: string, aad?: Buffer): EncryptedBlob {
@@ -178,6 +180,12 @@ export async function retrieveSecret(
   workspaceId?: string | null,
   userId?: string | null,
 ): Promise<string> {
+  const { logger } = await import("../logger.js");
+  const logCtx = { name, scope, workspaceId, userId };
+  logger.info(logCtx, "Retrieving secret");
+  // Also log to console for debugging in case pino is suppressed or failing
+  console.log(`[DEBUG SECRETS] Retrieving secret: name=${name}, scope=${scope}, workspaceId=${workspaceId}, userId=${userId}`);
+
   const conditions = [eq(secrets.name, name), eq(secrets.scope, scope)];
   if (scope === "user") {
     if (userId) {
@@ -202,8 +210,7 @@ export async function retrieveSecret(
     .where(and(...conditions));
   
   if (!secret) {
-    const { logger } = await import("../logger.js");
-    logger.debug({ name, scope, workspaceId, userId }, "Secret not found in DB");
+    logger.debug(logCtx, "Secret not found in DB");
     throw new Error(`Secret not found: ${name} (scope: ${scope})`);
   }
 
@@ -219,11 +226,11 @@ export async function retrieveSecret(
       aad,
     );
   } catch (err) {
-    const { logger } = await import("../logger.js");
     logger.error(
-      { err, name, scope, workspaceId, userId, secretId: secret.id, aad: aad.toString() },
+      { err, ...logCtx, secretId: secret.id, aad: aad.toString() },
       "Decryption failed for secret"
     );
+    console.error(`[DEBUG SECRETS] Decryption FAILED: name=${name}, scope=${scope}, workspaceId=${workspaceId}, userId=${userId}, aad=${aad.toString()}`);
     throw err;
   }
 }
@@ -316,6 +323,7 @@ export async function resolveSecretsForTask(
 ): Promise<Record<string, string>> {
   const { logger } = await import("../logger.js");
   logger.info({ requiredSecrets, scope, workspaceId, userId }, "Resolving secrets for task");
+  console.log(`[DEBUG SECRETS] resolveSecretsForTask: required=${requiredSecrets.join(",")}, scope=${scope}, workspaceId=${workspaceId}, userId=${userId}`);
   
   const resolved: Record<string, string> = {};
   for (const name of requiredSecrets) {
@@ -337,6 +345,7 @@ export async function resolveSecretsForTask(
       // If a required secret is missing, the agent will fail cleanly at runtime rather than
       // crashing the entire pod provisioning process.
       logger.warn({ err, name, scope, workspaceId, userId }, "Failed to decrypt secret during task resolution");
+      console.error(`[DEBUG SECRETS] resolveSecretsForTask FAIL for ${name}: ${err}`);
     }
   }
   return resolved;
