@@ -200,18 +200,32 @@ export async function retrieveSecret(
     .select()
     .from(secrets)
     .where(and(...conditions));
-  if (!secret) throw new Error(`Secret not found: ${name} (scope: ${scope})`);
+  
+  if (!secret) {
+    const { logger } = await import("../logger.js");
+    logger.debug({ name, scope, workspaceId, userId }, "Secret not found in DB");
+    throw new Error(`Secret not found: ${name} (scope: ${scope})`);
+  }
 
   const aad = buildSecretAAD(name, scope, workspaceId);
-  return decrypt(
-    {
-      alg: secret.alg ?? ALG_AES_256_GCM_V1,
-      iv: secret.iv,
-      ciphertext: secret.encryptedValue,
-      authTag: secret.authTag,
-    },
-    aad,
-  );
+  try {
+    return decrypt(
+      {
+        alg: secret.alg ?? ALG_AES_256_GCM_V1,
+        iv: secret.iv,
+        ciphertext: secret.encryptedValue,
+        authTag: secret.authTag,
+      },
+      aad,
+    );
+  } catch (err) {
+    const { logger } = await import("../logger.js");
+    logger.error(
+      { err, name, scope, workspaceId, userId, secretId: secret.id, aad: aad.toString() },
+      "Decryption failed for secret"
+    );
+    throw err;
+  }
 }
 
 export async function listSecrets(
@@ -300,18 +314,30 @@ export async function resolveSecretsForTask(
   workspaceId?: string | null,
   userId?: string | null,
 ): Promise<Record<string, string>> {
+  const { logger } = await import("../logger.js");
+  logger.info({ requiredSecrets, scope, workspaceId, userId }, "Resolving secrets for task");
+  
   const resolved: Record<string, string> = {};
   for (const name of requiredSecrets) {
     if (scope !== "global") {
       // Try repo-scoped secret first, fall back to global
       try {
         resolved[name] = await retrieveSecretWithFallback(name, scope, workspaceId, userId);
+        logger.debug({ name, scope, workspaceId, userId }, "Resolved repo-scoped secret");
         continue;
       } catch {
         // Not found at repo scope — fall through to global
       }
     }
-    resolved[name] = await retrieveSecretWithFallback(name, "global", workspaceId, userId);
+    try {
+      resolved[name] = await retrieveSecretWithFallback(name, "global", workspaceId, userId);
+      logger.debug({ name, workspaceId, userId }, "Resolved global-scoped secret");
+    } catch (err) {
+      // Log but do not bubble up decryption errors for individual secrets during batch fetch.
+      // If a required secret is missing, the agent will fail cleanly at runtime rather than
+      // crashing the entire pod provisioning process.
+      logger.warn({ err, name, scope, workspaceId, userId }, "Failed to decrypt secret during task resolution");
+    }
   }
   return resolved;
 }
