@@ -272,9 +272,18 @@ function decideRunning(snapshot: WorldSnapshot): RepoAction {
   const { spec, status } = snapshot.run;
 
   // PR was just detected in agent output; promote. Only coding tasks follow
-  // the PR lifecycle — pr_review tasks reference someone else's PR and never
-  // enter PR_OPENED even if a prUrl is set on the row.
-  if (spec.taskType === "coding" && status.prUrl && status.state === TaskState.RUNNING) {
+  // the PR lifecycle. 
+  // IMPORTANT: We only promote if we haven't already recorded a PR state. If 
+  // prState is already set, we are likely resuming an agent on an existing 
+  // PR branch, and we should let it stay in RUNNING until the turn completes
+  // rather than bouncing it back to PR_OPENED (which could trigger a 
+  // resume-loop if CI is still failing).
+  if (
+    spec.taskType === "coding" &&
+    status.prUrl &&
+    status.state === TaskState.RUNNING &&
+    !status.prState
+  ) {
     return {
       kind: "transition",
       to: TaskState.PR_OPENED,
