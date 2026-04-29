@@ -523,12 +523,7 @@ function decideFromPrStatus(snapshot: WorldSnapshot, allowFailComplete: boolean)
     snapshot.settings.reviewEnabled &&
     !snapshot.settings.hasReviewSubtask &&
     !snapshot.settings.autoMerge &&
-    prev.checks !== null &&
-    // Ensure we are only sticky-launching if the current database state
-    // DOES NOT already record passing CI. If it does, we've already had
-    // our chance to edge-trigger or sticky-trigger.
-    prev.checks !== "passing" &&
-    prev.checks !== "none"
+    prev.checks !== null
   ) {
     // Only launch if it's either an on_pr trigger, or an on_ci_pass trigger
     // where CI is actually passing (already checked in the if).
