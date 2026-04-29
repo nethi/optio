@@ -231,6 +231,12 @@ export async function retrieveSecret(
       "Decryption failed for secret"
     );
     console.error(`[DEBUG SECRETS] Decryption FAILED: name=${name}, scope=${scope}, workspaceId=${workspaceId}, userId=${userId}, aad=${aad.toString()}`);
+    
+    // Check if this is an authentication/decryption failure
+    if (err instanceof Error && (err.message.includes("Unsupported state") || err.message.includes("unable to authenticate"))) {
+      console.warn(`[DEBUG SECRETS] Swallowing decryption error for ${name} to prevent worker crash`);
+      return ""; // Return empty string to signal "configured but unreadable"
+    }
     throw err;
   }
 }
