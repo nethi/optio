@@ -145,7 +145,7 @@ function interpretIntent(status: RepoRunStatus, spec: RepoRunSpec): RepoAction |
       };
     }
     case "restart": {
-      if (terminal || status.state === TaskState.FAILED) {
+      if (terminal || status.state === TaskState.FAILED || status.state === TaskState.PR_OPENED) {
         return {
           kind: "transition",
           to: TaskState.QUEUED,
@@ -399,39 +399,89 @@ function decideFromPrStatus(snapshot: WorldSnapshot, allowFailComplete: boolean)
     canResume &&
     snapshot.settings.recentAutoResumeCount < snapshot.settings.maxAutoResumes;
 
-  // Merge conflicts (edge-triggered).
-  if (pr.mergeable === false && pr.state === "open" && prev.checks !== "conflicts") {
-    if (autoResumeAllowed) {
+  // Merge conflicts (edge-triggered or sticky if auto-resume allowed).
+  if (pr.mergeable === false && pr.state === "open") {
+    if (prev.checks !== "conflicts") {
+      if (autoResumeAllowed) {
+        return {
+          kind: "resumeAgent",
+          resumeReason: "conflicts",
+          reason: "pr_conflicts_auto_resume",
+        };
+      }
+      return {
+        kind: "transition",
+        to: TaskState.NEEDS_ATTENTION,
+        statusPatch: { prChecksStatus: "failing" },
+        trigger: "merge_conflicts",
+        reason: "pr_conflicts_needs_attention",
+      };
+    }
+
+    if (autoResumeAllowed && status.state === TaskState.PR_OPENED) {
       return {
         kind: "resumeAgent",
         resumeReason: "conflicts",
-        reason: "pr_conflicts_auto_resume",
+        reason: "pr_conflicts_auto_resume_sticky",
       };
     }
-    return {
-      kind: "transition",
-      to: TaskState.NEEDS_ATTENTION,
-      statusPatch: { prChecksStatus: "failing" },
-      trigger: "merge_conflicts",
-      reason: "pr_conflicts_needs_attention",
-    };
   }
 
-  // CI just started failing.
-  if (pr.checksStatus === "failing" && prev.checks !== "failing" && pr.state === "open") {
-    if (autoResumeAllowed) {
+  // CI failing (edge-triggered or sticky if auto-resume allowed).
+  if (pr.checksStatus === "failing" && pr.state === "open") {
+    if (prev.checks !== "failing") {
+      if (autoResumeAllowed) {
+        return {
+          kind: "resumeAgent",
+          resumeReason: "ci_failure",
+          reason: "ci_failing_auto_resume",
+        };
+      }
+      return {
+        kind: "transition",
+        to: TaskState.NEEDS_ATTENTION,
+        statusPatch: { prChecksStatus: "failing" },
+        trigger: "ci_failing",
+        reason: "ci_failing_needs_attention",
+      };
+    }
+
+    // Sticky auto-resume: if CI is failing and we have auto-resume enabled but
+    // we haven't resumed yet (state is still PR_OPENED), trigger it.
+    // This catches cases where the edge-trigger was missed or we just enabled
+    // the setting.
+    // Sticky auto-resume: if CI is failing and we have auto-resume enabled but
+    // we haven't resumed yet (state is still PR_OPENED), trigger it.
+    // This catches cases where the edge-trigger was missed or we just enabled
+    // the setting.
+    if (autoResumeAllowed && status.state === TaskState.PR_OPENED) {
       return {
         kind: "resumeAgent",
         resumeReason: "ci_failure",
-        reason: "ci_failing_auto_resume",
+        reason: "ci_failing_auto_resume_sticky",
+      };
+    }
+  }
+
+  // Review changes requested (edge-triggered).
+  if (
+    pr.reviewStatus === "changes_requested" &&
+    prev.review !== "changes_requested" &&
+    pr.state === "open"
+  ) {
+    if (autoResumeAllowed) {
+      return {
+        kind: "resumeAgent",
+        resumeReason: "review",
+        reason: "review_changes_requested_auto_resume",
       };
     }
     return {
       kind: "transition",
       to: TaskState.NEEDS_ATTENTION,
-      statusPatch: { prChecksStatus: "failing" },
-      trigger: "ci_failing",
-      reason: "ci_failing_needs_attention",
+      statusPatch: { prReviewStatus: "changes_requested" },
+      trigger: "review_rejected",
+      reason: "review_changes_requested_needs_attention",
     };
   }
 
