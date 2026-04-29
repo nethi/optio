@@ -135,9 +135,15 @@ async function buildRepoSnapshot(ref: RunRef): Promise<WorldSnapshot | null> {
   );
 
   const offPeak = getOffPeakInfo(now);
-  const hasReviewSubtask = subtaskCounts.some(
-    (s) => s.state !== TaskState.FAILED && s.blocksParent,
-  );
+
+  // We need to know if a review subtask has EVER been launched for this task
+  // to avoid relaunch loops when subtasks complete and clear their blocksParent flag.
+  const [anyReviewSubtask] = await db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(and(eq(tasks.parentTaskId, row.id), eq(tasks.taskType, "review")))
+    .limit(1);
+  const hasReviewSubtask = !!anyReviewSubtask;
 
   const snapshot: WorldSnapshot = {
     now,
