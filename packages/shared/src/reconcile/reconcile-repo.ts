@@ -485,7 +485,7 @@ function decideFromPrStatus(snapshot: WorldSnapshot, allowFailComplete: boolean)
     };
   }
 
-  // CI just passed → trigger review if configured for on_ci_pass.
+  // CI just passed (edge-triggered) → trigger review if configured for on_ci_pass.
   // We also trigger if checksStatus is "none" (no CI configured).
   const isCiPassingTransition = pr.checksStatus === "passing" && prev.checks !== "passing";
   const isNoCi = pr.checksStatus === "none";
@@ -511,6 +511,34 @@ function decideFromPrStatus(snapshot: WorldSnapshot, allowFailComplete: boolean)
     !snapshot.settings.hasReviewSubtask
   ) {
     return { kind: "launchReview", reason: "on_pr_launch_review" };
+  }
+
+  // Sticky review launch (recovery): if CI is passing (or none) and review
+  // is enabled/configured but we haven't launched it yet (state is PR_OPENED),
+  // launch it. This catches cases where the edge-trigger was missed.
+  if (
+    (pr.checksStatus === "passing" || pr.checksStatus === "none") &&
+    pr.state === "open" &&
+    status.state === TaskState.PR_OPENED &&
+    snapshot.settings.reviewEnabled &&
+    !snapshot.settings.hasReviewSubtask &&
+    !snapshot.settings.autoMerge &&
+    prev.checks !== null &&
+    // Ensure we are only sticky-launching if the current database state
+    // DOES NOT already record passing CI. If it does, we've already had
+    // our chance to edge-trigger or sticky-trigger.
+    prev.checks !== "passing" &&
+    prev.checks !== "none"
+  ) {
+    // Only launch if it's either an on_pr trigger, or an on_ci_pass trigger
+    // where CI is actually passing (already checked in the if).
+    const shouldLaunch =
+      snapshot.settings.reviewTrigger === "on_pr" ||
+      (snapshot.settings.reviewTrigger === "on_ci_pass" && pr.checksStatus === "passing");
+
+    if (shouldLaunch) {
+      return { kind: "launchReview", reason: "ci_passing_launch_review_sticky" };
+    }
   }
 
   // Auto-merge path.
