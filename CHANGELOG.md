@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Helm (Chart 0.1.1): PostgreSQL 18 enablement** — new `postgresql.usePgdataSubdirectory` value (default `false`) allows opt-in use of a `pgdata` subdirectory on the PVC. This pattern is required for fresh PostgreSQL 18+ deployments to avoid PVC metadata conflicts (lost+found). **BREAKING if enabled on existing deployments** — see chart NOTES.txt for migration instructions.
+
 ## [0.4.0] - 2026-04-27
 
 ### Added

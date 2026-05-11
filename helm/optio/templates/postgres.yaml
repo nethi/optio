@@ -73,9 +73,13 @@ spec:
           command: ['sh', '-c']
           args:
             - |
-              mkdir -p /var/lib/postgresql/data/pgdata
               chown -R 999:999 /var/lib/postgresql/data
+              chmod 700 /var/lib/postgresql/data
+              {{- if .Values.postgresql.usePgdataSubdirectory }}
+              mkdir -p /var/lib/postgresql/data/pgdata
               chmod 700 /var/lib/postgresql/data/pgdata
+              chown 999:999 /var/lib/postgresql/data/pgdata
+              {{- end }}
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
@@ -137,10 +141,10 @@ spec:
                 secretKeyRef:
                   name: {{ .Release.Name }}-postgres-credentials
                   key: POSTGRES_PASSWORD
-            # Use a subdirectory for PGDATA so initdb doesn't trip over
-            # filesystem artifacts (e.g. lost+found on ext4 PVs).
+            # Use a subdirectory for PGDATA if enabled (recommended for PG 18+)
+            # to avoid filesystem artifacts (e.g. lost+found on ext4 PVs).
             - name: PGDATA
-              value: /var/lib/postgresql/data/pgdata
+              value: {{ if .Values.postgresql.usePgdataSubdirectory }}/var/lib/postgresql/data/pgdata{{ else }}/var/lib/postgresql/data{{ end }}
           ports:
             - containerPort: 5432
           volumeMounts:
